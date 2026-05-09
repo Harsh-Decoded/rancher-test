@@ -1,0 +1,136 @@
+---
+- name: Skip SSL configuration
+  ansible.builtin.debug:
+    msg: "SSL is disabled. To enable, set ssl_enabled: true"
+  when: ssl_enabled is false
+
+- name: Configure Let's Encrypt SSL
+  block:
+    - name: Create ClusterIssuer for Let's Encrypt
+      ansible.builtin.copy:
+        content: |
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: {{ letsencrypt_cluster_issuer_name }}
+          spec:
+            acme:
+              server: https://acme-v02.api.letsencrypt.org/directory
+              email: {{ letsencrypt_email }}
+              privateKeySecretRef:
+                name: letsencrypt-prod
+              solvers:
+              - http01:
+                  ingress:
+                    class: nginx
+        dest: /tmp/letsencrypt-issuer.yaml
+
+    - name: Apply ClusterIssuer
+      ansible.builtin.command:
+        cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} apply -f /tmp/letsencrypt-issuer.yaml"
+      register: issuer_apply
+      changed_when: "'created' in issuer_apply.stdout or 'configured' in issuer_apply.stdout"
+      failed_when: issuer_apply.rc != 0
+
+    - name: Update Rancher Ingress with Let's Encrypt cert
+      ansible.builtin.command:
+        cmd: |
+          {{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} patch ingress rancher \
+            -n {{ ssl_namespace }} \
+            --type merge \
+            -p '{"spec":{"tls":[{"hosts":["{{ rancher_domain }}"],"secretName":"rancher-tls","issuerRef":{"name":"{{ letsencrypt_cluster_issuer_name }}","kind":"ClusterIssuer"}}]}}'
+      register: ingress_patch
+      changed_when: ingress_patch.rc == 0
+      failed_when: ingress_patch.rc != 0
+
+    - name: Wait for certificate to be issued
+      ansible.builtin.command:
+        cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} get certificate -n {{ ssl_namespace }} rancher-tls -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'"
+      register: cert_status
+      until: cert_status.stdout == 'True'
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Cleanup temporary files
+      ansible.builtin.file:
+        path: /tmp/letsencrypt-issuer.yaml
+        state: absent
+
+    - name: Display Let's Encrypt certificate info
+      ansible.builtin.debug:
+        msg: "Let's Encrypt certificate successfully configured for {{ rancher_domain }}"
+
+  when:
+    - ssl_enabled is true
+    - ssl_mode == 'letsencrypt'
+    - rke2_mode == 'server'
+
+- name: Configure custom certificate from secret
+  block:
+    - name: Validate certificate files exist
+      ansible.builtin.assert:
+        that:
+          - ssl_tls_crt_path | length > 0
+          - ssl_tls_key_path | length > 0
+        fail_msg: "ssl_tls_crt_path and ssl_tls_key_path must be provided when ssl_mode is 'secret'"
+
+    - name: Read certificate file
+      ansible.builtin.slurp:
+        src: "{{ ssl_tls_crt_path }}"
+      register: tls_crt_content
+
+    - name: Read certificate key file
+      ansible.builtin.slurp:
+        src: "{{ ssl_tls_key_path }}"
+      register: tls_key_content
+
+    - name: Create TLS secret
+      ansible.builtin.command:
+        cmd: |
+          {{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} create secret tls rancher-tls \
+            --cert={{ ssl_tls_crt_path }} \
+            --key={{ ssl_tls_key_path }} \
+            -n {{ ssl_namespace }} \
+            --dry-run=client -o yaml | {{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} apply -f -
+      register: secret_create
+      changed_when: "'created' in secret_create.stdout or 'configured' in secret_create.stdout"
+      failed_when: secret_create.rc != 0
+
+    - name: Update Rancher Ingress with custom certificate
+      ansible.builtin.command:
+        cmd: |
+          {{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} patch ingress rancher \
+            -n {{ ssl_namespace }} \
+            --type merge \
+            -p '{"spec":{"tls":[{"hosts":["{{ rancher_domain }}"],"secretName":"rancher-tls"}]}}'
+      register: ingress_patch
+      changed_when: ingress_patch.rc == 0
+      failed_when: ingress_patch.rc != 0
+
+    - name: Display custom certificate info
+      ansible.builtin.debug:
+        msg: "Custom certificate successfully configured for {{ rancher_domain }}"
+
+  when:
+    - ssl_enabled is true
+    - ssl_mode == 'secret'
+    - rke2_mode == 'server'
+
+- name: Configure custom CA certificate
+  block:
+    - name: Create secret with CA certificate
+      ansible.builtin.command:
+        cmd: |
+          {{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} create secret generic rancher-ca \
+            --from-file=ca.crt={{ ssl_ca_path }} \
+            -n {{ ssl_namespace }} \
+            --dry-run=client -o yaml | {{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} apply -f -
+      register: ca_secret_create
+      changed_when: "'created' in ca_secret_create.stdout or 'configured' in ca_secret_create.stdout"
+      failed_when: ca_secret_create.rc != 0
+      when: ssl_ca_path | length > 0
+
+  when:
+    - ssl_enabled is true
+    - rke2_mode == 'server'

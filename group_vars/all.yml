@@ -1,0 +1,79 @@
+---
+# Hostname Configuration
+hostname: rancher-server
+
+# System Update
+system_update_enabled: true
+
+# Network Configuration
+static_ip_enabled: false
+network_interface: eth0
+static_ip: "192.168.1.100"
+gateway: "192.168.1.1"
+dns_servers:
+  - "8.8.8.8"
+  - "8.8.4.4"
+
+# SSH Configuration
+ssh_port: 22
+ssh_max_auth_tries: 3
+ssh_auth_mode: password
+ssh_public_key: ""
+
+# Firewall
+firewall_ssh_source_cidrs:
+  - "0.0.0.0/0"
+firewall_additional_ports: []
+
+# Security
+selinux_mode: enforcing
+
+# Fail2Ban
+fail2ban_enabled: true
+fail2ban_ssh_maxretry: 5
+fail2ban_ssh_findtime: 600
+fail2ban_ssh_bantime: 3600
+
+# Tools
+install_tools:
+  - curl
+  - wget
+  - git
+  - tar
+  - unzip
+  - netcat
+  - jq
+  - vim
+
+# RKE2 Configuration
+rke2_version: latest
+rke2_mode: server
+rke2_token: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+rke2_cluster_cidr: "10.42.0.0/16"
+rke2_service_cidr: "10.43.0.0/16"
+rke2_disable_components: []
+
+# Rancher Configuration
+rancher_mode: local
+rancher_domain: "rancher.example.com"
+rancher_version: stable
+rancher_replicas: 1
+rancher_agent_server_url: ""
+
+# Cert Manager
+cert_manager_version: latest
+cert_manager_namespace: cert-manager
+
+# SSL/TLS Configuration
+ssl_enabled: false
+ssl_mode: letsencrypt
+ssl_tls_crt_path: ""
+ssl_tls_key_path: ""
+ssl_ca_path: ""
+
+# Kubernetes API
+kubernetes_api_server: "https://{{ ansible_default_ipv4.address }}:6443"
+
+# Logging and Metrics (optional)
+enable_audit_logging: true
+enable_metrics_server: true

@@ -1,0 +1,98 @@
+---
+- name: Create rancher namespace
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} create namespace {{ rancher_namespace }}"
+  register: ns_create
+  changed_when: "'created' in ns_create.stdout"
+  failed_when:
+    - ns_create.rc != 0
+    - "'already exists' not in ns_create.stderr"
+  when: rke2_mode == 'server'
+
+- name: Add Helm repository for Rancher
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/helm repo add {{ rancher_repo_name }} {{ rancher_repo_url }}"
+  register: helm_repo_add
+  changed_when: "'has been added' in helm_repo_add.stdout"
+  failed_when:
+    - helm_repo_add.rc != 0
+    - "'already exists' not in helm_repo_add.stderr"
+  environment:
+    KUBECONFIG: "{{ rke2_kubeconfig }}"
+  when: rke2_mode == 'server'
+
+- name: Update Helm repositories
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/helm repo update"
+  environment:
+    KUBECONFIG: "{{ rke2_kubeconfig }}"
+  changed_when: true
+  when: rke2_mode == 'server'
+
+- name: Install Rancher (local mode) via Helm
+  ansible.builtin.command:
+    cmd: |
+      {{ rke2_bin_dir }}/helm upgrade --install {{ rancher_release_name }} \
+        {{ rancher_repo_name }}/{{ rancher_chart }} \
+        --namespace {{ rancher_namespace }} \
+        --version {{ rancher_version if rancher_version != 'stable' else '' }} \
+        --set hostname={{ rancher_domain }} \
+        --set replicas={{ rancher_replicas }} \
+        --set ingress.enabled=true \
+        --set ingress.ingressClassName=nginx \
+        --wait
+  environment:
+    KUBECONFIG: "{{ rke2_kubeconfig }}"
+  register: helm_install
+  changed_when: "'has been upgraded' in helm_install.stdout or 'has been installed' in helm_install.stdout"
+  failed_when: helm_install.rc != 0
+  retries: 3
+  delay: 10
+  when:
+    - rke2_mode == 'server'
+    - rancher_mode == 'local'
+
+- name: Wait for Rancher to be ready
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} rollout status deployment/{{ rancher_release_name }} -n {{ rancher_namespace }} --timeout=5m"
+  changed_when: false
+  failed_when: false
+  retries: 3
+  delay: 5
+  when:
+    - rke2_mode == 'server'
+    - rancher_mode == 'local'
+
+- name: Verify Rancher installation
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} get pods -n {{ rancher_namespace }}"
+  register: rancher_pods
+  changed_when: false
+  failed_when: rancher_pods.rc != 0
+  when:
+    - rke2_mode == 'server'
+    - rancher_mode == 'local'
+
+- name: Get Rancher bootstrap password
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} get secret --namespace {{ rancher_namespace }} bootstrap-secret -o jsonpath='{.data.bootstrapPassword}' | base64 -d"
+  register: rancher_bootstrap_password
+  changed_when: false
+  failed_when: rancher_bootstrap_password.rc != 0
+  when:
+    - rke2_mode == 'server'
+    - rancher_mode == 'local'
+
+- name: Display Rancher access information
+  ansible.builtin.debug:
+    msg: |
+      Rancher Server URL: https://{{ rancher_domain }}
+      Bootstrap Password: {{ rancher_bootstrap_password.stdout }}
+  when:
+    - rke2_mode == 'server'
+    - rancher_mode == 'local'
+
+- name: Agent mode information
+  ansible.builtin.debug:
+    msg: "Rancher agent mode. This cluster will be registered with an external Rancher server."
+  when: rancher_mode == 'agent'

@@ -1,0 +1,54 @@
+# Ansible
+*.retry
+.ansible/
+roles/*/files/*.key
+roles/*/files/*.pem
+roles/*/templates/*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# SSH keys
+.ssh/
+id_rsa
+id_rsa.pub
+known_hosts
+
+# Sensitive data
+group_vars/*/vault.yml
+host_vars/*/vault.yml
+credentials.yml
+secrets.yml
+
+# Temporary files
+/tmp
+*.bak
+*.backup
+
+# Fact caching
+/tmp/ansible_facts
+
+# Kubernetes configs
+kubeconfig
+kubeconfig.yaml
+.kube/
+
+# SSL certificates (store in external secure location)
+*.crt
+*.key
+*.pem

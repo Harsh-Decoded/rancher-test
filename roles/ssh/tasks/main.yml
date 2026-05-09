@@ -1,0 +1,140 @@
+---
+- name: Ensure SSH service is installed and running
+  block:
+    - name: Install OpenSSH server (Debian)
+      ansible.builtin.apt:
+        name: openssh-server
+        state: present
+      when: ansible_os_family == 'Debian'
+
+    - name: Install OpenSSH server (RedHat)
+      ansible.builtin.dnf:
+        name: openssh-server
+        state: present
+      when:
+        - ansible_os_family == 'RedHat'
+        - ansible_distribution_major_version | int >= 8
+
+    - name: Install OpenSSH server (RedHat Legacy)
+      ansible.builtin.yum:
+        name: openssh-server
+        state: present
+      when:
+        - ansible_os_family == 'RedHat'
+        - ansible_distribution_major_version | int < 8
+
+    - name: Install OpenSSH server (SUSE)
+      ansible.builtin.zypper:
+        name: openssh
+        state: present
+      when: ansible_os_family == 'Suse'
+
+- name: Backup original sshd_config
+  ansible.builtin.copy:
+    src: /etc/ssh/sshd_config
+    dest: /etc/ssh/sshd_config.backup
+    remote_src: true
+    mode: '0600'
+    backup: true
+
+- name: Configure SSH port
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?Port\s'
+    line: "Port {{ ssh_port }}"
+    state: present
+
+- name: Configure SSH max auth tries
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?MaxAuthTries\s'
+    line: "MaxAuthTries {{ ssh_max_auth_tries }}"
+    state: present
+
+- name: Configure SSH authentication with password
+  block:
+    - name: Enable password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication\s'
+        line: 'PasswordAuthentication yes'
+        state: present
+
+    - name: Enable challenge-response authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?ChallengeResponseAuthentication\s'
+        line: 'ChallengeResponseAuthentication yes'
+        state: present
+  when: ssh_auth_mode == 'password'
+
+- name: Configure SSH authentication with public key
+  block:
+    - name: Disable password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication\s'
+        line: 'PasswordAuthentication no'
+        state: present
+
+    - name: Disable challenge-response authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?ChallengeResponseAuthentication\s'
+        line: 'ChallengeResponseAuthentication no'
+        state: present
+
+    - name: Enable public key authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication\s'
+        line: 'PubkeyAuthentication yes'
+        state: present
+
+    - name: Create root .ssh directory
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+
+    - name: Add SSH public key
+      ansible.builtin.copy:
+        content: "{{ ssh_public_key }}"
+        dest: /root/.ssh/authorized_keys
+        owner: root
+        group: root
+        mode: '0600'
+  when: ssh_auth_mode == 'key'
+
+- name: Apply additional hardening settings
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regex }}"
+    line: "{{ item.line }}"
+    state: present
+  loop:
+    - { regex: '^#?PermitRootLogin', line: 'PermitRootLogin prohibit-password' }
+    - { regex: '^#?HostKey /etc/ssh/ssh_host_rsa_key', line: 'HostKey /etc/ssh/ssh_host_rsa_key' }
+    - { regex: '^#?HostKey /etc/ssh/ssh_host_ed25519_key', line: 'HostKey /etc/ssh/ssh_host_ed25519_key' }
+    - { regex: '^#?Protocol', line: 'Protocol 2' }
+    - { regex: '^#?LogLevel', line: 'LogLevel VERBOSE' }
+    - { regex: '^#?X11Forwarding', line: 'X11Forwarding no' }
+    - { regex: '^#?PrintMotd', line: 'PrintMotd no' }
+    - { regex: '^#?AcceptEnv', line: 'AcceptEnv LANG LC_*' }
+    - { regex: '^#?Subsystem', line: 'Subsystem sftp /usr/lib/openssh/sftp-server' }
+
+- name: Validate sshd configuration
+  ansible.builtin.command:
+    cmd: sshd -t
+  register: sshd_test
+  changed_when: false
+  failed_when: sshd_test.rc != 0
+
+- name: Restart SSH service
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted
+    enabled: true
+    daemon_reload: true

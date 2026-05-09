@@ -1,0 +1,48 @@
+---
+- name: Install base packages (Debian)
+  ansible.builtin.apt:
+    name: "{{ base_packages_debian }}"
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install base packages (RedHat)
+  ansible.builtin.dnf:
+    name: "{{ base_packages_redhat }}"
+    state: present
+  when:
+    - ansible_os_family == 'RedHat'
+    - ansible_distribution_major_version | int >= 8
+
+- name: Install base packages (RedHat Legacy)
+  ansible.builtin.yum:
+    name: "{{ base_packages_redhat }}"
+    state: present
+  when:
+    - ansible_os_family == 'RedHat'
+    - ansible_distribution_major_version | int < 8
+
+- name: Install base packages (SUSE)
+  ansible.builtin.zypper:
+    name: "{{ base_packages_suse }}"
+    state: present
+  when: ansible_os_family == 'Suse'
+
+- name: Disable swap immediately
+  ansible.builtin.command:
+    cmd: swapoff -a
+  register: swapoff_result
+  changed_when: swapoff_result.rc == 0
+  failed_when: false
+
+- name: Remove swap from fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '\sswap\s'
+    state: absent
+
+- name: Verify swap is disabled
+  ansible.builtin.command:
+    cmd: free | grep -i swap
+  register: swap_check
+  changed_when: false
+  failed_when: false

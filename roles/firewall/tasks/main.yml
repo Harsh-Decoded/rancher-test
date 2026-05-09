@@ -1,0 +1,236 @@
+---
+- name: Configure firewall for Debian-based systems (ufw)
+  block:
+    - name: Install ufw
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Enable ufw
+      ansible.builtin.command:
+        cmd: ufw --force enable
+      register: ufw_enable
+      changed_when: "'Firewall is active' in ufw_enable.stdout or 'enabled' in ufw_enable.stdout"
+      failed_when: ufw_enable.rc not in [0, 1]
+
+    - name: Set default policies
+      ansible.builtin.command:
+        cmd: "ufw default {{ item.policy }} {{ item.direction }}"
+      loop:
+        - { policy: 'deny', direction: 'incoming' }
+        - { policy: 'allow', direction: 'outgoing' }
+      register: ufw_policy
+      changed_when: true
+      failed_when: ufw_policy.rc not in [0, 1]
+
+    - name: Allow SSH from specified sources
+      ansible.builtin.command:
+        cmd: "ufw allow from {{ item }} to any port {{ ssh_port }} proto tcp"
+      loop: "{{ firewall_ssh_source_cidrs }}"
+      register: ufw_ssh
+      changed_when: true
+      failed_when: ufw_ssh.rc not in [0, 1]
+
+    - name: Allow HTTP and HTTPS
+      ansible.builtin.command:
+        cmd: "ufw allow {{ item }}/tcp"
+      loop: [80, 443]
+      register: ufw_http
+      changed_when: true
+      failed_when: ufw_http.rc not in [0, 1]
+
+    - name: Allow Kubernetes API (6443)
+      ansible.builtin.command:
+        cmd: ufw allow 6443/tcp
+      register: ufw_k8s_api
+      changed_when: true
+      failed_when: ufw_k8s_api.rc not in [0, 1]
+
+    - name: Allow RKE2 node communication (9345)
+      ansible.builtin.command:
+        cmd: ufw allow 9345/tcp
+      register: ufw_rke2
+      changed_when: true
+      failed_when: ufw_rke2.rc not in [0, 1]
+
+    - name: Allow custom ports
+      ansible.builtin.command:
+        cmd: "ufw allow {{ item }}/tcp"
+      loop: "{{ firewall_additional_ports }}"
+      register: ufw_custom
+      changed_when: true
+      failed_when: ufw_custom.rc not in [0, 1]
+      when: firewall_additional_ports | length > 0
+
+    - name: Allow Flannel/Calico CNI traffic
+      ansible.builtin.command:
+        cmd: "ufw allow {{ item }}"
+      loop:
+        - '8472/udp'
+        - '51820/udp'
+        - '51821/udp'
+      register: ufw_cni
+      changed_when: true
+      failed_when: ufw_cni.rc not in [0, 1]
+
+    - name: Reload ufw
+      ansible.builtin.command:
+        cmd: ufw reload
+      register: ufw_reload
+      changed_when: ufw_reload.rc == 0
+      failed_when: ufw_reload.rc != 0
+
+  when: ansible_os_family == 'Debian'
+
+- name: Configure firewall for RedHat-based systems (firewalld)
+  block:
+    - name: Install firewalld
+      ansible.builtin.dnf:
+        name: firewalld
+        state: present
+      when: ansible_distribution_major_version | int >= 8
+
+    - name: Install firewalld (Legacy)
+      ansible.builtin.yum:
+        name: firewalld
+        state: present
+      when: ansible_distribution_major_version | int < 8
+
+    - name: Enable and start firewalld
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Add SSH to firewall (from specified sources)
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" source address=\"{{ item }}\" port protocol=\"tcp\" port=\"{{ ssh_port }}\" accept'"
+      loop: "{{ firewall_ssh_source_cidrs }}"
+      register: fw_ssh
+      changed_when: fw_ssh.rc == 0
+      failed_when: fw_ssh.rc not in [0, 1]
+
+    - name: Allow HTTP and HTTPS
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-service={{ item }}"
+      loop: [http, https]
+      register: fw_http
+      changed_when: fw_http.rc == 0
+      failed_when: fw_http.rc not in [0, 1]
+
+    - name: Allow Kubernetes API (6443)
+      ansible.builtin.command:
+        cmd: firewall-cmd --permanent --add-port=6443/tcp
+      register: fw_k8s
+      changed_when: fw_k8s.rc == 0
+      failed_when: fw_k8s.rc not in [0, 1]
+
+    - name: Allow RKE2 node communication (9345)
+      ansible.builtin.command:
+        cmd: firewall-cmd --permanent --add-port=9345/tcp
+      register: fw_rke2
+      changed_when: fw_rke2.rc == 0
+      failed_when: fw_rke2.rc not in [0, 1]
+
+    - name: Allow custom ports
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-port={{ item }}/tcp"
+      loop: "{{ firewall_additional_ports }}"
+      register: fw_custom
+      changed_when: fw_custom.rc == 0
+      failed_when: fw_custom.rc not in [0, 1]
+      when: firewall_additional_ports | length > 0
+
+    - name: Allow Flannel/Calico CNI traffic
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-port={{ item }}"
+      loop:
+        - '8472/udp'
+        - '51820/udp'
+        - '51821/udp'
+      register: fw_cni
+      changed_when: fw_cni.rc == 0
+      failed_when: fw_cni.rc not in [0, 1]
+
+    - name: Reload firewalld
+      ansible.builtin.command:
+        cmd: firewall-cmd --reload
+      register: fw_reload
+      changed_when: fw_reload.rc == 0
+      failed_when: fw_reload.rc != 0
+
+  when: ansible_os_family == 'RedHat'
+
+- name: Configure firewall for SUSE systems (firewalld)
+  block:
+    - name: Install firewalld
+      ansible.builtin.zypper:
+        name: firewalld
+        state: present
+
+    - name: Enable and start firewalld
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Add SSH to firewall (from specified sources)
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" source address=\"{{ item }}\" port protocol=\"tcp\" port=\"{{ ssh_port }}\" accept'"
+      loop: "{{ firewall_ssh_source_cidrs }}"
+      register: fw_ssh
+      changed_when: fw_ssh.rc == 0
+      failed_when: fw_ssh.rc not in [0, 1]
+
+    - name: Allow HTTP and HTTPS
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-service={{ item }}"
+      loop: [http, https]
+      register: fw_http
+      changed_when: fw_http.rc == 0
+      failed_when: fw_http.rc not in [0, 1]
+
+    - name: Allow Kubernetes API (6443)
+      ansible.builtin.command:
+        cmd: firewall-cmd --permanent --add-port=6443/tcp
+      register: fw_k8s
+      changed_when: fw_k8s.rc == 0
+      failed_when: fw_k8s.rc not in [0, 1]
+
+    - name: Allow RKE2 node communication (9345)
+      ansible.builtin.command:
+        cmd: firewall-cmd --permanent --add-port=9345/tcp
+      register: fw_rke2
+      changed_when: fw_rke2.rc == 0
+      failed_when: fw_rke2.rc not in [0, 1]
+
+    - name: Allow custom ports
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-port={{ item }}/tcp"
+      loop: "{{ firewall_additional_ports }}"
+      register: fw_custom
+      changed_when: fw_custom.rc == 0
+      failed_when: fw_custom.rc not in [0, 1]
+      when: firewall_additional_ports | length > 0
+
+    - name: Allow Flannel/Calico CNI traffic
+      ansible.builtin.command:
+        cmd: "firewall-cmd --permanent --add-port={{ item }}"
+      loop:
+        - '8472/udp'
+        - '51820/udp'
+        - '51821/udp'
+      register: fw_cni
+      changed_when: fw_cni.rc == 0
+      failed_when: fw_cni.rc not in [0, 1]
+
+    - name: Reload firewalld
+      ansible.builtin.command:
+        cmd: firewall-cmd --reload
+      register: fw_reload
+      changed_when: fw_reload.rc == 0
+      failed_when: fw_reload.rc != 0
+
+  when: ansible_os_family == 'Suse'

@@ -1,0 +1,83 @@
+---
+- name: Install fail2ban (Debian)
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+  when: ansible_os_family == 'Debian' and fail2ban_enabled is true
+
+- name: Install fail2ban (RedHat)
+  ansible.builtin.dnf:
+    name: fail2ban
+    state: present
+  when:
+    - ansible_os_family == 'RedHat'
+    - ansible_distribution_major_version | int >= 8
+    - fail2ban_enabled is true
+
+- name: Install fail2ban (RedHat Legacy)
+  ansible.builtin.yum:
+    name: fail2ban
+    state: present
+  when:
+    - ansible_os_family == 'RedHat'
+    - ansible_distribution_major_version | int < 8
+    - fail2ban_enabled is true
+
+- name: Install fail2ban (SUSE)
+  ansible.builtin.zypper:
+    name: fail2ban
+    state: present
+  when: ansible_os_family == 'Suse' and fail2ban_enabled is true
+
+- name: Create fail2ban local.conf
+  ansible.builtin.copy:
+    content: |
+      [DEFAULT]
+      bantime = {{ fail2ban_ssh_bantime }}
+      findtime = {{ fail2ban_ssh_findtime }}
+      maxretry = {{ fail2ban_ssh_maxretry }}
+
+      [sshd]
+      enabled = true
+      port = {{ ssh_port }}
+      filter = sshd
+      logpath = /var/log/auth.log
+      maxretry = {{ fail2ban_ssh_maxretry }}
+      findtime = {{ fail2ban_ssh_findtime }}
+      bantime = {{ fail2ban_ssh_bantime }}
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  when: fail2ban_enabled is true
+
+- name: Update logpath for RedHat-based systems
+  ansible.builtin.lineinfile:
+    path: /etc/fail2ban/jail.local
+    regexp: '^logpath = /var/log/auth.log'
+    line: 'logpath = /var/log/secure'
+  when:
+    - ansible_os_family == 'RedHat'
+    - fail2ban_enabled is true
+
+- name: Enable and start fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: fail2ban_enabled is true
+
+- name: Verify fail2ban SSH jail
+  ansible.builtin.command:
+    cmd: fail2ban-client status sshd
+  register: fail2ban_status
+  changed_when: false
+  failed_when: fail2ban_status.rc != 0
+  when: fail2ban_enabled is true
+
+- name: Skip fail2ban installation
+  ansible.builtin.debug:
+    msg: "fail2ban is disabled. Set fail2ban_enabled: true to enable"
+  when: fail2ban_enabled is false

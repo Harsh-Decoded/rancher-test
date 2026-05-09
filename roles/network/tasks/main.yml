@@ -1,0 +1,111 @@
+---
+- name: Configure static IP via NetworkManager (Debian)
+  block:
+    - name: Install NetworkManager
+      ansible.builtin.apt:
+        name: network-manager
+        state: present
+
+    - name: Create NetworkManager connection
+      ansible.builtin.command:
+        cmd: |
+          nmcli connection add type ethernet ifname {{ network_interface }} con-name static-eth \
+          ipv4.addresses {{ static_ip }}/24 ipv4.gateway {{ gateway }} ipv4.method manual
+      register: nm_add_result
+      changed_when: "'successfully added' in nm_add_result.stdout"
+      failed_when:
+        - nm_add_result.rc != 0
+        - "'already exists' not in nm_add_result.stderr"
+
+    - name: Set DNS servers
+      ansible.builtin.command:
+        cmd: "nmcli connection modify static-eth ipv4.dns '{{ dns_servers | join(' ') }}'"
+      register: dns_result
+      changed_when: dns_result.rc == 0
+      failed_when: dns_result.rc != 0
+
+    - name: Activate connection
+      ansible.builtin.command:
+        cmd: "nmcli connection up static-eth"
+      register: activate_result
+      changed_when: "'successfully activated' in activate_result.stdout"
+      failed_when: activate_result.rc != 0
+  when:
+    - ansible_os_family == 'Debian'
+    - static_ip_enabled is true
+
+- name: Configure static IP via NetworkManager (RedHat)
+  block:
+    - name: Install NetworkManager
+      ansible.builtin.dnf:
+        name: NetworkManager
+        state: present
+      when: ansible_distribution_major_version | int >= 8
+
+    - name: Create NetworkManager connection
+      ansible.builtin.command:
+        cmd: |
+          nmcli connection add type ethernet ifname {{ network_interface }} con-name static-eth \
+          ipv4.addresses {{ static_ip }}/24 ipv4.gateway {{ gateway }} ipv4.method manual
+      register: nm_add_result
+      changed_when: "'successfully added' in nm_add_result.stdout"
+      failed_when:
+        - nm_add_result.rc != 0
+        - "'already exists' not in nm_add_result.stderr"
+
+    - name: Set DNS servers
+      ansible.builtin.command:
+        cmd: "nmcli connection modify static-eth ipv4.dns '{{ dns_servers | join(' ') }}'"
+      register: dns_result
+      changed_when: dns_result.rc == 0
+      failed_when: dns_result.rc != 0
+
+    - name: Activate connection
+      ansible.builtin.command:
+        cmd: "nmcli connection up static-eth"
+      register: activate_result
+      changed_when: "'successfully activated' in activate_result.stdout"
+      failed_when: activate_result.rc != 0
+  when:
+    - ansible_os_family == 'RedHat'
+    - static_ip_enabled is true
+
+- name: Configure static IP via NetworkManager (SUSE)
+  block:
+    - name: Install NetworkManager
+      ansible.builtin.zypper:
+        name: NetworkManager
+        state: present
+
+    - name: Create NetworkManager connection
+      ansible.builtin.command:
+        cmd: |
+          nmcli connection add type ethernet ifname {{ network_interface }} con-name static-eth \
+          ipv4.addresses {{ static_ip }}/24 ipv4.gateway {{ gateway }} ipv4.method manual
+      register: nm_add_result
+      changed_when: "'successfully added' in nm_add_result.stdout"
+      failed_when:
+        - nm_add_result.rc != 0
+        - "'already exists' not in nm_add_result.stderr"
+
+    - name: Set DNS servers
+      ansible.builtin.command:
+        cmd: "nmcli connection modify static-eth ipv4.dns '{{ dns_servers | join(' ') }}'"
+      register: dns_result
+      changed_when: dns_result.rc == 0
+      failed_when: dns_result.rc != 0
+
+    - name: Activate connection
+      ansible.builtin.command:
+        cmd: "nmcli connection up static-eth"
+      register: activate_result
+      changed_when: "'successfully activated' in activate_result.stdout"
+      failed_when: activate_result.rc != 0
+  when:
+    - ansible_os_family == 'Suse'
+    - static_ip_enabled is true
+
+- name: Skip network configuration for dynamic IP
+  ansible.builtin.debug:
+    msg: "Keeping dynamic IP configuration. static_ip_enabled: {{ static_ip_enabled }}"
+  when: static_ip_enabled is false

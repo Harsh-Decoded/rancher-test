@@ -1,0 +1,28 @@
+---
+- name: Install common tools (Debian)
+  ansible.builtin.apt:
+    name: "{{ install_tools }}"
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install common tools (RedHat)
+  ansible.builtin.dnf:
+    name: "{{ install_tools }}"
+    state: present
+  when:
+    - ansible_os_family == 'RedHat'
+    - ansible_distribution_major_version | int >= 8
+
+- name: Install common tools (RedHat Legacy)
+  ansible.builtin.yum:
+    name: "{{ install_tools }}"
+    state: present
+  when:
+    - ansible_os_family == 'RedHat'
+    - ansible_distribution_major_version | int < 8
+
+- name: Install common tools (SUSE)
+  ansible.builtin.zypper:
+    name: "{{ install_tools }}"
+    state: present
+  when: ansible_os_family == 'Suse'

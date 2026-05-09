@@ -1,0 +1,42 @@
+---
+base_packages_debian:
+  - linux-headers
+  - build-essential
+  - openssl
+  - ca-certificates
+  - apparmor
+  - apparmor-utils
+  - net-tools
+  - iputils-ping
+  - dnsutils
+  - traceroute
+
+base_packages_redhat:
+  - kernel-devel
+  - gcc
+  - gcc-c++
+  - make
+  - openssl
+  - ca-certificates
+  - selinux-policy
+  - selinux-policy-devel
+  - net-tools
+  - iputils
+  - bind-utils
+  - traceroute
+
+base_packages_suse:
+  - kernel-default-devel
+  - gcc
+  - gcc-c++
+  - make
+  - openssl
+  - ca-certificates
+  - apparmor
+  - apparmor-utils
+  - net-tools
+  - iputils
+  - bind-utils
+  - traceroute
+
+swap_mount_path: /etc/fstab

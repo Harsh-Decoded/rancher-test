@@ -1,0 +1,43 @@
+---
+- name: Update package cache and upgrade packages (Debian)
+  block:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: full
+        autoclean: true
+        autoremove: true
+  when:
+    - ansible_os_family == 'Debian'
+    - system_update_enabled is true
+
+- name: Update package cache and upgrade packages (RedHat)
+  block:
+    - name: Upgrade all packages
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+      when: ansible_distribution_major_version | int >= 8
+
+    - name: Upgrade all packages (Legacy)
+      ansible.builtin.yum:
+        name: "*"
+        state: latest
+      when: ansible_distribution_major_version | int < 8
+  when:
+    - ansible_os_family == 'RedHat'
+    - system_update_enabled is true
+
+- name: Update package cache and upgrade packages (SUSE)
+  block:
+    - name: Upgrade all packages
+      ansible.builtin.zypper:
+        name: "*"
+        state: latest
+  when:
+    - ansible_os_family == 'Suse'
+    - system_update_enabled is true

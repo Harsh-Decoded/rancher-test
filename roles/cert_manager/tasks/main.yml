@@ -1,0 +1,65 @@
+---
+- name: Create cert-manager namespace
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} create namespace {{ cert_manager_namespace }}"
+  register: ns_create
+  changed_when: "'created' in ns_create.stdout"
+  failed_when:
+    - ns_create.rc != 0
+    - "'already exists' not in ns_create.stderr"
+  when: rke2_mode == 'server'
+
+- name: Add Helm repository for cert-manager
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/helm repo add {{ cert_manager_repo_name }} {{ cert_manager_repo_url }}"
+  register: helm_repo_add
+  changed_when: "'has been added' in helm_repo_add.stdout"
+  failed_when:
+    - helm_repo_add.rc != 0
+    - "'already exists' not in helm_repo_add.stderr"
+  environment:
+    KUBECONFIG: "{{ rke2_kubeconfig }}"
+  when: rke2_mode == 'server'
+
+- name: Update Helm repositories
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/helm repo update"
+  environment:
+    KUBECONFIG: "{{ rke2_kubeconfig }}"
+  changed_when: true
+  when: rke2_mode == 'server'
+
+- name: Install cert-manager via Helm
+  ansible.builtin.command:
+    cmd: |
+      {{ rke2_bin_dir }}/helm upgrade --install {{ cert_manager_release_name }} \
+        {{ cert_manager_repo_name }}/{{ cert_manager_chart }} \
+        --namespace {{ cert_manager_namespace }} \
+        --version {{ cert_manager_version if cert_manager_version != 'latest' else '' }} \
+        --set installCRDs=true \
+        --wait
+  environment:
+    KUBECONFIG: "{{ rke2_kubeconfig }}"
+  register: helm_install
+  changed_when: "'has been upgraded' in helm_install.stdout or 'has been installed' in helm_install.stdout"
+  failed_when: helm_install.rc != 0
+  retries: 3
+  delay: 10
+  when: rke2_mode == 'server'
+
+- name: Wait for cert-manager to be ready
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} rollout status deployment/{{ cert_manager_release_name }} -n {{ cert_manager_namespace }} --timeout=5m"
+  changed_when: false
+  failed_when: false
+  retries: 3
+  delay: 5
+  when: rke2_mode == 'server'
+
+- name: Verify cert-manager installation
+  ansible.builtin.command:
+    cmd: "{{ rke2_bin_dir }}/kubectl --kubeconfig={{ rke2_kubeconfig }} get pods -n {{ cert_manager_namespace }}"
+  register: cert_manager_pods
+  changed_when: false
+  failed_when: cert_manager_pods.rc != 0
+  when: rke2_mode == 'server'

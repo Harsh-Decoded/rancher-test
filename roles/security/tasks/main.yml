@@ -1,0 +1,128 @@
+---
+- name: Detect and configure SELinux (RedHat)
+  block:
+    - name: Check if SELinux is available
+      ansible.builtin.command:
+        cmd: getenforce
+      register: selinux_status
+      changed_when: false
+      failed_when: false
+
+    - name: Set SELinux to enforcing mode
+      ansible.builtin.command:
+        cmd: setenforce Enforcing
+      register: selinux_set
+      changed_when: selinux_set.rc == 0
+      failed_when: selinux_set.rc != 0
+      when: selinux_status.rc == 0 and selinux_status.stdout != 'Enforcing'
+
+    - name: Configure SELinux permanent
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: "SELINUX={{ selinux_mode }}"
+      register: selinux_config
+      when: selinux_status.rc == 0
+
+    - name: Display SELinux status
+      ansible.builtin.debug:
+        msg: "SELinux is {{ selinux_status.stdout }}"
+      when: selinux_status.rc == 0
+  when: ansible_os_family == 'RedHat'
+
+- name: Detect and configure AppArmor (Debian/SUSE)
+  block:
+    - name: Check if AppArmor is available
+      ansible.builtin.command:
+        cmd: aa-status
+      register: apparmor_status
+      changed_when: false
+      failed_when: false
+
+    - name: Install AppArmor (Debian)
+      ansible.builtin.apt:
+        name: apparmor
+        state: present
+      when:
+        - ansible_os_family == 'Debian'
+        - apparmor_status.rc != 0
+
+    - name: Enable AppArmor service (Debian)
+      ansible.builtin.systemd:
+        name: apparmor
+        state: started
+        enabled: true
+        daemon_reload: true
+      when: ansible_os_family == 'Debian'
+
+    - name: Enable AppArmor service (SUSE)
+      ansible.builtin.systemd:
+        name: apparmor
+        state: started
+        enabled: true
+        daemon_reload: true
+      when: ansible_os_family == 'Suse'
+
+    - name: Display AppArmor status
+      ansible.builtin.debug:
+        msg: "AppArmor is configured and enabled"
+      when: apparmor_status.rc == 0
+
+  when: ansible_os_family in ['Debian', 'Suse']
+
+- name: Kernel hardening parameters
+  block:
+    - name: Create sysctl.d directory
+      ansible.builtin.file:
+        path: /etc/sysctl.d
+        state: directory
+        mode: '0755'
+
+    - name: Apply kernel hardening parameters
+      ansible.builtin.copy:
+        content: |
+          # Kernel hardening for Rancher/RKE2
+          kernel.unprivileged_userns_clone = 0
+          kernel.unprivileged_bpf_disabled = 1
+          net.ipv4.ip_forward = 1
+          net.ipv4.conf.all.rp_filter = 0
+          net.ipv4.conf.default.rp_filter = 0
+          net.ipv6.conf.all.forwarding = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          vm.max_map_count = 262144
+          fs.file-max = 2097152
+          fs.aio-max-nr = 1048576
+        dest: /etc/sysctl.d/99-rancher-hardening.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Apply sysctl settings
+      ansible.builtin.command:
+        cmd: sysctl -p /etc/sysctl.d/99-rancher-hardening.conf
+      register: sysctl_apply
+      changed_when: sysctl_apply.rc == 0
+      failed_when: sysctl_apply.rc != 0
+
+- name: Configure system limits for Kubernetes
+  block:
+    - name: Create limits.d directory
+      ansible.builtin.file:
+        path: /etc/security/limits.d
+        state: directory
+        mode: '0755'
+
+    - name: Apply resource limits
+      ansible.builtin.copy:
+        content: |
+          * soft nofile 1048576
+          * hard nofile 1048576
+          * soft nproc 65536
+          * hard nproc 65536
+          * soft memlock unlimited
+          * hard memlock unlimited
+        dest: /etc/security/limits.d/99-rancher-limits.conf
+        owner: root
+        group: root
+        mode: '0644'

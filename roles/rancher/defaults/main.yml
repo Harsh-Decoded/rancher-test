@@ -1,0 +1,7 @@
+---
+rancher_namespace: cattle-system
+rancher_repo_url: https://releases.rancher.com/server-charts/stable
+rancher_repo_name: rancher-stable
+rancher_chart: rancher
+rancher_release_name: rancher
+rancher_replicas: 3

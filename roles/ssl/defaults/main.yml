@@ -1,0 +1,4 @@
+---
+ssl_namespace: cattle-system
+letsencrypt_email: admin@example.com
+letsencrypt_cluster_issuer_name: letsencrypt-prod
