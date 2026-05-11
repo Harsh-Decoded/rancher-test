@@ -13,35 +13,35 @@
           - ansible_os_family in ['Debian', 'RedHat', 'Suse']
         fail_msg: "Unsupported OS: {{ ansible_os_family }}. Supported: Debian, RedHat, Suse families"
 
-    - name: Validate RKE2 mode
-      ansible.builtin.assert:
-        that:
-          - rke2_mode in ['server', 'agent']
-        fail_msg: "Invalid RKE2 mode: {{ rke2_mode }}. Must be 'server' or 'agent'"
+    # - name: Validate RKE2 mode
+    #   ansible.builtin.assert:
+    #     that:
+    #       - rke2_mode in ['server', 'agent']
+    #     fail_msg: "Invalid RKE2 mode: {{ rke2_mode }}. Must be 'server' or 'agent'"
 
-    - name: Validate SSL configuration
-      ansible.builtin.assert:
-        that:
-          - ssl_mode in ['letsencrypt', 'secret']
-        fail_msg: "Invalid ssl_mode: {{ ssl_mode }}. Must be 'letsencrypt' or 'secret'"
-      when: ssl_enabled is true
+    # - name: Validate SSL configuration
+    #   ansible.builtin.assert:
+    #     that:
+    #       - ssl_mode in ['letsencrypt', 'secret']
+    #     fail_msg: "Invalid ssl_mode: {{ ssl_mode }}. Must be 'letsencrypt' or 'secret'"
+    #   when: ssl_enabled is true
 
-    - name: Validate SSH auth mode
-      ansible.builtin.assert:
-        that:
-          - ssh_auth_mode in ['password', 'key']
-        fail_msg: "Invalid ssh_auth_mode: {{ ssh_auth_mode }}. Must be 'password' or 'key'"
+    # - name: Validate SSH auth mode
+    #   ansible.builtin.assert:
+    #     that:
+    #       - ssh_auth_mode in ['password', 'key']
+    #     fail_msg: "Invalid ssh_auth_mode: {{ ssh_auth_mode }}. Must be 'password' or 'key'"
 
-    - name: Validate SSH public key when key auth enabled
-      ansible.builtin.assert:
-        that:
-          - ssh_public_key | length > 0
-        fail_msg: "ssh_public_key is required when ssh_auth_mode is 'key'"
-      when: ssh_auth_mode == 'key'
+    # - name: Validate SSH public key when key auth enabled
+    #   ansible.builtin.assert:
+    #     that:
+    #       - ssh_public_key | length > 0
+    #     fail_msg: "ssh_public_key is required when ssh_auth_mode is 'key'"
+    #   when: ssh_auth_mode == 'key'
 
   roles:
     - hostname
-    # - system_update
+    - system_update
     # - network
     # - system
     # - ssh
@@ -55,26 +55,26 @@
     # - role: ssl
     #   tags: [ssl]
 
-  post_tasks:
-    - name: Kubernetes cluster status check
-      ansible.builtin.command:
-        cmd: /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml get nodes
-      register: k8s_nodes
-      changed_when: false
-      failed_when: false
-      when: rke2_mode == 'server'
+  # post_tasks:
+  #   - name: Kubernetes cluster status check
+  #     ansible.builtin.command:
+  #       cmd: /var/lib/rancher/rke2/bin/kubectl --kubeconfig=/etc/rancher/rke2/rke2.yaml get nodes
+  #     register: k8s_nodes
+  #     changed_when: false
+  #     failed_when: false
+  #     when: rke2_mode == 'server'
 
-    - name: Display cluster information
-      ansible.builtin.debug:
-        msg: "{{ k8s_nodes.stdout_lines }}"
-      when:
-        - rke2_mode == 'server'
-        - k8s_nodes.rc == 0
+  #   - name: Display cluster information
+  #     ansible.builtin.debug:
+  #       msg: "{{ k8s_nodes.stdout_lines }}"
+  #     when:
+  #       - rke2_mode == 'server'
+  #       - k8s_nodes.rc == 0
 
-    - name: Playbook completion message
-      ansible.builtin.debug:
-        msg: |
-          ✓ Rancher Server Deployment Complete
-          Rancher URL: https://{{ rancher_domain }}
-          RKE2 Mode: {{ rke2_mode }}
-          Kubernetes API: {{ kubernetes_api_server }}
+  #   - name: Playbook completion message
+  #     ansible.builtin.debug:
+  #       msg: |
+  #         ✓ Rancher Server Deployment Complete
+  #         Rancher URL: https://{{ rancher_domain }}
+  #         RKE2 Mode: {{ rke2_mode }}
+  #         Kubernetes API: {{ kubernetes_api_server }}
