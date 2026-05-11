@@ -41,19 +41,19 @@
 
   roles:
     - hostname
-    - system_update
-    - network
-    - system
-    - ssh
-    - firewall
-    - security
-    - fail2ban
-    - tools
-    - rke2
-    - cert_manager
-    - rancher
-    - role: ssl
-      tags: [ssl]
+    # - system_update
+    # - network
+    # - system
+    # - ssh
+    # - firewall
+    # - security
+    # - fail2ban
+    # - tools
+    # - rke2
+    # - cert_manager
+    # - rancher
+    # - role: ssl
+    #   tags: [ssl]
 
   post_tasks:
     - name: Kubernetes cluster status check
