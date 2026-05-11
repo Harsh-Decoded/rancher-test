@@ -13,6 +13,12 @@
           - ansible_os_family in ['Debian', 'RedHat', 'Suse']
         fail_msg: "Unsupported OS: {{ ansible_os_family }}. Supported: Debian, RedHat, Suse families"
 
+    - name: Ensure ansible remote_tmp exists with correct permissions
+      file:
+        path: /tmp/.ansible/tmp
+        state: directory
+        mode: "0755"
+
     # - name: Validate RKE2 mode
     #   ansible.builtin.assert:
     #     that:
